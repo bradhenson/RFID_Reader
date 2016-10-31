@@ -4,7 +4,7 @@ Arduino 4 to RFID Rx
 Arduino GND to RFID GND
 Arduino Digital pin 2 to RFID enable
 Arduino +5V to RFID VCC pin.
-Arduino Digital pin 13 used to supply a signal to the locking mechanism
+Arduino Digital pin 5 used to supply a signal to the locking mechanism
 LCD RS pin to digital pin 12
 LCD Enable pin to digital pin 11
 LCD D4 pin to digital pin 10
@@ -16,12 +16,25 @@ LCD VSS pin to ground
 LCD VCC pin to 5V
 LCD VO pin (pin 3) is used to dim the display via a pot, could use PWM for this
 Arduino Digital pin 3 used to connect to a button for initiating programming mode
-Arduino Digital pin 5 used to connect to a buzzer/speaker
 Arduino Analog pin 0 used to connect to a button for ENTER
 Arduino Analog pin 1 used to connect to a button for NEXT
 Arduino Analog pin 4 used to connect to a Green LED
 Arduino Analog pin 5 used to connect to a Red LED
 Arduino Analog pin 2 used to connect to a button for BYPASS
+
+Additional hardware components needed:
+-Each button is debounced using hardware, this is done through a Resistor/Capacitor circuit,
+The each resistor in the RC circuit is 10k ohms, each capacitor is 10 uF.
+-The Red and Green leds are connected to ground via a pull down resistor, which is 470 ohms each.
+-The LCD backlight contrast is controlled using a 10k ohm multi turn pot.
+-The connections to the external components (ie, Red and Greed led, Relay, and RFID Reader
+are all connected using screw post terminals.
+-Another LED can be put in line with Arduino Pin 5 (used for the Relay) to give a visual
+inidication that power is being applied to the relay.
+
+Something to keep in mind when working with relay boards, some boards have a reverse logic
+to them, meaning that sending a postive 5 volt signal to them will cause them to turn off 
+and not on.
 **********************************************************************************/
 
 #include <EEPROM.h>
@@ -36,21 +49,42 @@ Arduino Analog pin 2 used to connect to a button for BYPASS
 #define RFID_STOP   0x0D   // RFID Reader Stop byte
 #define GREEN_LED 4        // Green indicator light is connected to bit 2 on PORT C register
 #define RED_LED 5          // Red indicator light is connected to bit 2 on PORT C register
-#define TIMEOUT 2000       // Timeout counter time (in CPU cycles, not millis) during programming mode
 #define ENTER_BUTTON 0     // the Enter button is connected to bit 0 on PORT C register
 #define NEXT_BUTTON 1      // the Next button is connected to bit 1 on PORT C register
 #define BYPASS_BUTTON 2    // the BYPASS button is connected to bit 2 on PORT C register
 #define RELAY 5           // this defines the pin that the relay will be connected to
 
 /********************************************************************************
+
+
 Define the amount of time in milli seconds the relay should stay on
+
+
 *********************************************************************************/
-#define RELAY_TIME 3000    //Change the numerical value to change the amount of time the relay should be on
+
+#define RELAY_TIME 3000    //Change the numerical value 
 
 /********************************************************************************
-Define the hardcoded RFID tag to be used as backup user to through the security
+
+
+Define the hardcoded TIMEOUT Time when executing a programming event
+
+
 **********************************************************************************/
-char backUpUser[] = "9876543210";
+
+#define TIMEOUT 2000      // Timeout counter time (in CPU cycles, not millis) 
+
+/********************************************************************************
+Define the hardcoded RFID tag to be used as backup user to get past the security check
+The backUpUser will not have swipe access to the lock, it is used for programming mode
+in the event the other master card is lost.
+
+Additionally, the bypass button can be used to do the same thing. This is Analog Pin 2
+on the Arduino platform.
+**********************************************************************************/
+
+char backUpUser[] = "ABCD543210";
+
 
 SoftwareSerial rfidSerial =  SoftwareSerial(rxPin, txPin); // set up a new serial port for RFID reader
 LiquidCrystal lcd(12, 11, 10, 9, 8, 7); // initialize the library with the numbers of the interface pins
@@ -68,6 +102,7 @@ boolean enterButtonState = 0;      // Create a select button state variable
 boolean nextUserFlag = 0;          // Create a user flag for programming mode function
 boolean enterButtonFlag = 0;       // Create a button flag for programming mode function
 boolean bypassButtonState = 0;     // Create a button state for the Bypass button
+boolean invalidMasterCard = 0;     // Create a value to record if an invalid Master card was used
 /*********************************************************************************
 The following user addresses identify the starting location in EEPROM where that
 specific user's code will be stored. Example: Codes are 10 position int arrays, so position 
@@ -88,7 +123,7 @@ pinMode(enablePin, OUTPUT);     // Sets the enablePin as an output (for the RFID
 pinMode(rxPin, INPUT);          // Sets the rxPin as an output (for the RFID Reader)
 digitalWrite(enablePin, HIGH);  // disable RFID Reader  
 pinMode(RELAY, OUTPUT);            // Set digital pin 4 as OUTPUT to be used for the locking mechanism
-pinMode(3, INPUT_PULLUP);       // Set the internal pull up resistor on digital pin 3
+pinMode(3, INPUT);       // Set the internal pull up resistor on digital pin 3
 // To free up a couple "digital" pins on the Arduino, we will use some of the anaglog pins as digital
 // To do this we have to set the Data Direction Registery for the Port C Registery 
 DDRC = 0b00110000;              // Set Arduino Analog Pin 0 and 1 as a digital input and 2 and 3 as digital outputs  
@@ -114,7 +149,7 @@ rfidSerial.begin(2400);         // set the baud rate for the SoftwareSerial port
  void loop() { 
 
   lcd.setCursor(0, 0);             // Set the cursor location setCursor(column, row)
-  lcd.print("Ready For Input ");   // Set up the initial message   
+  lcd.print("Reader Is Ready ");   // Set up the initial message   
   lcd.setCursor(0, 1);             // Set the cursor location setCursor(column, row)
   lcd.print("                ");   // Clears out the second row of the LCD
 
@@ -182,6 +217,7 @@ to determine the state during a programming event.
    }
   PORTC |= (1 << RED_LED);          // The reader is not ready, turn on the Red LED
   PORTC &= ~(1 << GREEN_LED);       // The reader is not ready, turn off the Green LED
+  Serial.print("The card that was swiped is: "); // Message to be printed to the serial interface after a swipe
   Serial.println(rfidData);         // The rfidData string should now contain the tag's unique ID with a null termination
   Serial.flush();                   // Wait for all bytes to be transmitted to the Serial Monitor
   //lcd.setCursor(0, 0);            // Set the cursor location setCursor(column, row)
@@ -210,7 +246,7 @@ if(swipeState == true)       // if a swipe has occured, start comparing the resu
         //contents of EEPROM are read in one byte at a time
         readInArray[i] = EEPROM.read(users[compareCounter] + i); 
       } 
-      Serial.println(readInArray); // indicate out to the serial the current state
+      //Serial.println(readInArray); // indicate out to the serial the current state
       //the newly created readInArray is compared to swiped RFID code
       //the output of the strcmp() function is 0 when the strings match
       if (strcmp(readInArray, rfidData) == 0) 
@@ -236,16 +272,16 @@ if(swipeState == true)       // if a swipe has occured, start comparing the resu
   The following section is where we use the information obtained when comparing RFIDs
   to the values saved in EEPROM. 
 *********************************************************************************/    
-  if (swipeState == true) // If a swipe has occured, do something with the results of - match -
+if (swipeState == true) // If a swipe has occured, do something with the results of - match -
 {
   if (match == true)                     // When a match is found do this
   {
-    digitalWrite(RELAY, HIGH);              // if a match is found, set pin 3 to HIGH
+    digitalWrite(RELAY, HIGH);           // if a match is found, set pin 3 to HIGH
     lcd.setCursor(0, 0);                 // Set the cursor location setCursor(column, row)
-    lcd.print("Card Is Valid   ");       // indicate on the LCD that a match was found
+    lcd.print("Valid Card      ");       // indicate on the LCD that a match was found
     lcd.setCursor(0, 1);                 // Set the cursor location setCursor(column, row)
     lcd.print("Unlocking Now   ");
-    Serial.println("Card Is Valid"); // Tell the serial interface a match was found
+    Serial.println("Card is valid, unlocking"); // Tell the serial interface a match was found
     PORTC &= ~(1 << RED_LED);            // Turn off the red LED, long enough to toggle the green ones three times
    for ( uint8_t i = 0; i < 6; i++)      // Toggle the Green LEDs three times
    {
@@ -274,10 +310,9 @@ if(swipeState == true)       // if a swipe has occured, start comparing the resu
 
   //If the programming button was pushed outside the waiting to read loop, execute programming function
   if (programButtonState == 1) programmingMode(); 
-}  
+ }  
 } //This is the end of the Loop() function
- 
-  
+   
   /*******************************************************************************************************
   * 
   * 
@@ -333,7 +368,6 @@ if(swipeState == true)       // if a swipe has occured, start comparing the resu
    timeOutCounter = 0;                     // Zero out the time out counter before entering the loop
    while(1)
    {
-     Serial.print("Next User Function:");
      Serial.println(timeOutCounter);       // Tell the serial interface what the count is
      if ((PINC & (1 << NEXT_BUTTON)) == 0) // if the Next button is pressed, do the following
      {                                     // The pin is compared to 0 because it is being pulled up by the debouce hardware
@@ -365,8 +399,8 @@ if(swipeState == true)       // if a swipe has occured, start comparing the resu
  * 
  * Author: Bradford Henson
  * 
- * Description: This will put the Arduino in a so called Programming Mode so that a new
- * RFID code can be programmed to EEPROM.
+ * Description: This will put the Arduino in a Programming Mode so that a new
+ * RFID code can be programmed to EEPROM at a selected user position.
  *******************************************************************************************************/
 void programmingMode(void)
 {
@@ -374,9 +408,10 @@ void programmingMode(void)
   digitalWrite(enablePin, HIGH);              // deactivate the RFID reader
   timeOutCounter = 0;                         // Set the time out counter to zero
   enterButtonFlag = 0;                        // Set initial state of the enter button flag (used for exiting the while loop
-
+  invalidMasterCard = 0;
   boolean masterSwipeResult;       // used to store the result of the master card swipe as a boolean value
   int masterUsers[2] = {0, 200};   // the two master position are 0 and 800
+  
 
       char backUpUserTemp[] = "0123456789";   // char array used to store values from EEPROM
       for (uint8_t i = 0; i < 10; i++) //loop allows each char to be read for a given user
@@ -399,7 +434,6 @@ void programmingMode(void)
   lcd.print("Master Card Is   ");              // indicate on the LCD that it is in programming mode
   lcd.setCursor(0, 1);                        // Set the cursor location setCursor(column, row)
   lcd.print("Required        ");              // Set the LCD to press enter to continue
-
   rfidData[0] = 0;              // Clear the buffer 
   serialRecieveFlush();         //Flush the recieve data from the Serial Stream - prevents double scans
   digitalWrite(enablePin, LOW); // enable the RFID Reader
@@ -473,6 +507,7 @@ void programmingMode(void)
       {     
         masterSwipeResult = false;
         swipeState = 0;
+        invalidMasterCard = 1;
         lcd.setCursor(0, 0);           // Set the cursor location setCursor(column, row)
         lcd.print("Invalid Master  "); // indicate on the LCD the current state 
         lcd.setCursor(0, 1);           // Set the cursor location setCursor(column, row)
@@ -500,7 +535,6 @@ void programmingMode(void)
   //The following loop provides the user selection interface during a programming event
   while (1)                                   // Select User Loop
   {    
-           Serial.println("Select a user: ");
       Serial.println(timeOutCounter);         // Send the timeout counter value to serial
 
        if (masterSwipeResult == 1 || swipeState == 2)
@@ -598,6 +632,10 @@ void programmingMode(void)
                     lcd.print("ENTER or NEXT   ");
                     delay(500);
                     selectUserInterface(selectedUser);
+                    if (selectedUser == 11)
+                    {
+                      selectedUser = 1;
+                    }
                   break;                                
               }
             }        
@@ -616,7 +654,7 @@ void programmingMode(void)
   lcd.setCursor(0, 0);                   // Set the LCD up to prompt the user to swipe a card
   lcd.print("Programming Mode");
   lcd.setCursor(0, 1);
-  lcd.print("Swipe RFID Card ");
+  lcd.print("Swipe New Card  ");
   
   PORTC |= (1 << GREEN_LED);             // Turn on the Green LED, the reader is ready for a card
   PORTC &= ~(1 << RED_LED);              // Turn off the Red LED, the reader is ready for a card
@@ -686,7 +724,20 @@ void programmingMode(void)
    }
  }
  programButtonState = 0; // At the conclusion of programming mode function, set the state back to 0
- } 
+
+ if (invalidMasterCard == 0)                   // If a invalid master card was used, don't display the timeout message
+   {    
+     if (swipeState == 0 || selectedUser == 0) // If there was a timeout, display a message on the LCD
+     {
+           lcd.setCursor(0, 0);                    // Set the cursor location setCursor(column, row)          
+           lcd.print("Programming Mode");          // Idicates that we are still in programming mode on the LCD
+           lcd.setCursor(0, 1);                    // Set the cursor location setCursor(column, row)
+           lcd.print("Timed Out       ");          
+           delay(2000);                            // Slows the uC down for humans to see the timeout on the LCD
+           Serial.println("Programming Mode Timed Out");      // Prints message to serial interface
+     }
+  }
+}
  
 
   
