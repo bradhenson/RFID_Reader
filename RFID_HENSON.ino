@@ -47,12 +47,12 @@ and not on.
 #define BUFSIZE    11      // Size of receive buffer (in bytes) (10-byte unique ID + null character)
 #define RFID_START  0x0A   // RFID Reader Start byte
 #define RFID_STOP   0x0D   // RFID Reader Stop byte
-#define GREEN_LED 4        // Green indicator light is connected to bit 2 on PORT C register
-#define RED_LED 5          // Red indicator light is connected to bit 2 on PORT C register
+#define GREEN_LED A4       // Green indicator light is connected to bit 2 on PORT C register
+#define RED_LED A5         // Red indicator light is connected to bit 2 on PORT C register
 #define ENTER_BUTTON 0     // the Enter button is connected to bit 0 on PORT C register
 #define NEXT_BUTTON 1      // the Next button is connected to bit 1 on PORT C register
 #define BYPASS_BUTTON 2    // the BYPASS button is connected to bit 2 on PORT C register
-#define RELAY 5           // this defines the pin that the relay will be connected to
+#define RELAY 5            // this defines the pin that the relay will be connected to
 
 /********************************************************************************
 
@@ -62,7 +62,7 @@ Define the amount of time in milli seconds the relay should stay on
 
 *********************************************************************************/
 
-#define RELAY_TIME 3000    //Change the numerical value 
+#define RELAY_TIME 3000    //Change the numerical value (milliseconds)
 
 /********************************************************************************
 
@@ -72,15 +72,14 @@ Define the hardcoded TIMEOUT Time when executing a programming event
 
 **********************************************************************************/
 
-#define TIMEOUT 2000      // Timeout counter time (in CPU cycles, not millis) 
+#define TIMEOUT 2000      // Timeout counter time (in CPU cycles, not milliseconds) 
 
 /********************************************************************************
+
 Define the hardcoded RFID tag to be used as backup user to get past the security check
 The backUpUser will not have swipe access to the lock, it is used for programming mode
 in the event the other master card is lost.
 
-Additionally, the bypass button can be used to do the same thing. This is Analog Pin 2
-on the Arduino platform.
 **********************************************************************************/
 
 char backUpUser[] = "ABCD543210";
@@ -92,23 +91,23 @@ LiquidCrystal lcd(12, 11, 10, 9, 8, 7); // initialize the library with the numbe
 char rfidData[BUFSIZE];            // Buffer for incoming data (when reading the RFID Card)
 char offset = 0;                   // Offset into buffer (when reading the RFID Card)
 uint8_t selectedUser = 0;          // Create a selected user variable (programming function)
-uint8_t swipeState = 0;            // Create a variable used to determine card reading state (programming function)
+uint8_t swipeState = 0;            // Used to determine if a swipe has occured
 boolean match = false;             // Create a variable used determine if a card matches one of the saved user values
 uint8_t compareCounter = 0;        // Create a variable used as a counter in the compare while loop
 uint8_t programButtonState = 0;    // Create a variable used to determine when the programming button was pushed
-int timeOutCounter = 0;            // Create a timeout counter to use in subsequent loops
-boolean nextButtonState = 0;       // Create an enter button state variable
-boolean enterButtonState = 0;      // Create a select button state variable
+int timeOutCounter = 0;            // Create a timeout counter to use through out the programming mode section
+boolean nextButtonState = 0;       // Used to determine if the Next Button is being pressed
+boolean enterButtonState = 0;      // Used to determine if the Enter Button is being pressed
 boolean nextUserFlag = 0;          // Create a user flag for programming mode function
 boolean enterButtonFlag = 0;       // Create a button flag for programming mode function
-boolean bypassButtonState = 0;     // Create a button state for the Bypass button
-boolean invalidMasterCard = 0;     // Create a value to record if an invalid Master card was used
+boolean bypassButtonState = 0;     // Used to determine if the Bypass Button is being pressed
+boolean invalidMasterCard = 0;     // Used to determine if an invalid Master card was used during programming mode
 /*********************************************************************************
 The following user addresses identify the starting location in EEPROM where that
 specific user's code will be stored. Example: Codes are 10 position int arrays, so position 
 0 through 9 represent user one, 20 through 29 represent user two.
 *********************************************************************************/
-int users[11] = {0, 20, 40, 60, 80, 100, 120, 140, 160, 180, 200}; 
+int users[10] = {0, 20, 40, 60, 80, 100, 120, 140, 160, 180}; 
 
 /*******************************************************************************************************
 * 
@@ -122,14 +121,15 @@ void setup() {
 pinMode(enablePin, OUTPUT);     // Sets the enablePin as an output (for the RFID Reader)
 pinMode(rxPin, INPUT);          // Sets the rxPin as an output (for the RFID Reader)
 digitalWrite(enablePin, HIGH);  // disable RFID Reader  
-pinMode(RELAY, OUTPUT);            // Set digital pin 4 as OUTPUT to be used for the locking mechanism
-pinMode(3, INPUT);       // Set the internal pull up resistor on digital pin 3
-// To free up a couple "digital" pins on the Arduino, we will use some of the anaglog pins as digital
-// To do this we have to set the Data Direction Registery for the Port C Registery 
-DDRC = 0b00110000;              // Set Arduino Analog Pin 0 and 1 as a digital input and 2 and 3 as digital outputs  
-//Set the inital state of the LED pins to low by clearing the associated bits in the PORTC register
-PORTC &= ~(1 << GREEN_LED);     // Clears the bit in the PORTC registers associated with pin 2 on the Arduino
-PORTC &= ~(1 << RED_LED);       // Clears the bit in the PORTC registers associated with pin 3 on the Arduino
+pinMode(RELAY, OUTPUT);         // Set digital pin 4 as OUTPUT to be used for the locking mechanism
+pinMode(3, INPUT);              // Set pin 3 as an input
+pinMode(GREEN_LED, OUTPUT);     // set analog pin GREEN_LED as an output
+pinMode(RED_LED, OUTPUT);       // Set analog pin RED_LED as an output
+
+DDRC &= ~(1 << NEXT_BUTTON);
+DDRC &= ~(1 << ENTER_BUTTON);
+DDRC &= ~(1 << BYPASS_BUTTON);
+
 lcd.begin(16,2);                // Set up the LCD's number of columns and rows
 
 attachInterrupt(1, programButton, FALLING); // Setup the external interrupt for pin 3
@@ -157,51 +157,25 @@ rfidSerial.begin(2400);         // set the baud rate for the SoftwareSerial port
 Initialize the reader and start waiting for a swipe, once a read has occured
 the value is stored as rfidData[], then close out the reader
 *********************************************************************************/     
-  // Wait for a response from the RFID Reader
-  // See Arduino readBytesUntil() as an alternative solution to read data from the reader
+
   rfidData[0] = 0;                  // Clear the buffer 
   swipeState = 0;                   // Set the state as no card has been swiped yet
+  
   serialRecieveFlush(); //Flush the recieve data from the Serial Stream - prevents double scans
   
   digitalWrite(enablePin, LOW);           // enable the RFID Reader
   Serial.println("Ready for RFID Swipe"); // Output to serial that the reader is ready
   
-//Start waiting for a swipe, this program should be in this loop 90% of the time
-/*******************************************************************************************
-When the RFID Reader is active and a valid RFID tag is placed with range of the reader,
-the tag's unique ID will be transmitted as a 12-byte printable ASCII string to the host 
-(start byte + ID + stop byte)
- 
-For example, for a tag with a valid ID of 0F0184F07A, the following bytes would be sent:
-0x0A, 0x30, 0x46, 0x30, 0x31, 0x38, 0x34, 0x46, 0x30, 0x37, 0x41, 0x0D
-We'll receive the ID and convert it to a null-terminated string with no start or stop byte.
+  //Start waiting for a swipe, this program should be in this loop 90% of the time
 
-The only thing that was changed from orginal source code is the addition of a swipeState variable, used
-to determine the state during a programming event. 
-*****************************************************************************************/
-
- PORTC |= (1 << GREEN_LED);     // When the card reader is ready to read a card, turn on the Green LED
- PORTC &= ~(1 << RED_LED);      // When the card reader is ready to read a card, turn off the Red LED
+  digitalWrite(GREEN_LED, HIGH); // When the card reader is ready to read a card, turn on the Green LED
+  digitalWrite(RED_LED, LOW);    // When the card reader is ready to read a card, turn off the Red LED
  
-  while(1)
+  while(1)   // Wait for a response from the RFID Reader
    {
-
-     if (rfidSerial.available() > 0) // If there are any bytes available to read, then the RFID Reader has probably seen a valid tag
-      {
-        rfidData[offset] = rfidSerial.read();  // Get the byte and store it in our buffer
-        if (rfidData[offset] == RFID_START)    // If we receive the start byte from the RFID Reader, then get ready to receive the tag's unique ID
-        {
-          offset = -1;     // Clear offset (will be incremented back to 0 at the end of the loop)
-        }
-        else if (rfidData[offset] == RFID_STOP)  // If we receive the stop byte from the RFID Reader, then the tag's entire unique ID has been sent
-        {
-          rfidData[offset] = 0; // Null terminate the string of bytes we just received
-          swipeState = true;
-          break;
-        }
-        offset++;  // Increment offset into array
-        if (offset >= BUFSIZE) offset = 0; // If the incoming data string is longer than our buffer, wrap around to avoid going out-of-bounds
-      }
+      performCardRead();
+      if (swipeState == true) break;
+      
       //If the programming button was pushed during the waiting to read loop, execute programming function
       if (programButtonState == 1) 
       {
@@ -215,14 +189,14 @@ to determine the state during a programming event.
         break;
       }
    }
-  PORTC |= (1 << RED_LED);          // The reader is not ready, turn on the Red LED
-  PORTC &= ~(1 << GREEN_LED);       // The reader is not ready, turn off the Green LED
+  digitalWrite(RED_LED, HIGH);          // The reader is not ready, turn on the Red LED
+  digitalWrite(GREEN_LED, LOW);       // The reader is not ready, turn off the Green LED
+  digitalWrite(enablePin, HIGH);    // disable RFID Reader 
+   
   Serial.print("The card that was swiped is: "); // Message to be printed to the serial interface after a swipe
   Serial.println(rfidData);         // The rfidData string should now contain the tag's unique ID with a null termination
   Serial.flush();                   // Wait for all bytes to be transmitted to the Serial Monitor
-  //lcd.setCursor(0, 0);            // Set the cursor location setCursor(column, row)
-  //lcd.print("Input Recieved  ");  // Sets the desired message to the display
-  digitalWrite(enablePin, HIGH);    // disable RFID Reader 
+   
   delay(500);                       // this delay haults the uC just a little before moving on to something else                  
 
 /*********************************************************************************
@@ -231,15 +205,18 @@ to determine the state during a programming event.
  is found. When a match is found, the variable state is set to true and code breaks
  out of the loop.
 *********************************************************************************/
-
-compareCounter = 0;          // set the whileCounter back to zero for next cycle
-if(swipeState == true)       // if a swipe has occured, start comparing the results
-{
-  while (1) 
+ compareCounter = 0;          // set the whileCounter back to zero for next cycle
+ if(swipeState == 1)       // if a swipe has occured, start comparing the results
+ {
+  do 
   {                
       lcd.setCursor(0, 0);           // Set the cursor location setCursor(column, row)
       lcd.print("Comparing Tags  "); // indicate on the LCD the current state 
-                             
+
+      //The Char readInArray is initalized with some data becuase Arduino kept screwing up
+      //without this being done. There would be extra data points appended to the string
+      //even when it was ended with a null character. Initializing with some data will get the
+      //compiler to add the null character, and everything works as intended.                      
       char readInArray[] = "0123456789";   // char array used to store values from EEPROM
       for (uint8_t i = 0; i < 10; i++) //loop allows each char to be read for a given user
       {
@@ -260,19 +237,14 @@ if(swipeState == true)       // if a swipe has occured, start comparing the resu
       }
       // increments the counter to prevent the while loop from not ending
       // the copareCounter is also used when reading the EEPROM data
-      compareCounter++;      // this will make sure that the compare loop only happens 10 times 
-      if(compareCounter > 9) // The compare counter would have to be adjusted if more users are added
-      
-      {
-       break;  //When a total of 10 comparisons have been made, break out of the loop
-      } 
-   }
+      compareCounter++;      // this will make sure that the compare loop only happens 10 times  
+   }while (compareCounter < 10); 
 }
 /*********************************************************************************  
   The following section is where we use the information obtained when comparing RFIDs
   to the values saved in EEPROM. 
 *********************************************************************************/    
-if (swipeState == true) // If a swipe has occured, do something with the results of - match -
+if (swipeState == 1) // If a swipe has occured, do something with the results of - match -
 {
   if (match == true)                     // When a match is found do this
   {
@@ -282,15 +254,19 @@ if (swipeState == true) // If a swipe has occured, do something with the results
     lcd.setCursor(0, 1);                 // Set the cursor location setCursor(column, row)
     lcd.print("Unlocking Now   ");
     Serial.println("Card is valid, unlocking"); // Tell the serial interface a match was found
-    PORTC &= ~(1 << RED_LED);            // Turn off the red LED, long enough to toggle the green ones three times
-   for ( uint8_t i = 0; i < 6; i++)      // Toggle the Green LEDs three times
-   {
-     PORTC ^= (1 << GREEN_LED);          // Bitwise for toggle
-     delay(200);                         // Allow for a small delay, for human reaction time to see the blinking
-   }
-   PORTC |= (1 << RED_LED);              // Turn the Red LED back on, card reader is not ready for a swipe
-    delay(RELAY_TIME);                   //This is a termporary delay to allow the user to see pin 13 light up
-    digitalWrite(RELAY, LOW);               //turn the pin 13 LED off
+    digitalWrite(RED_LED, LOW);            // Turn off the red LED, long enough to toggle the green ones three times
+     
+    for ( uint8_t i = 0; i < 3; i++)      // Toggle the Green LEDs three times
+    {
+     digitalWrite(GREEN_LED, HIGH);
+     delay(200);
+     digitalWrite(GREEN_LED, LOW);
+     delay(200); 
+    }
+     
+    digitalWrite(RED_LED, HIGH);            // Turn the Red LED back on, card reader is not ready for a swipe
+    delay(RELAY_TIME);                      //This is a delay for how long the relay needs a signal
+    digitalWrite(RELAY, LOW);               //turn the relay off
   }
   else                                   // When no match is found do this
   {
@@ -300,10 +276,12 @@ if (swipeState == true) // If a swipe has occured, do something with the results
    lcd.print("Try Another Card");
    Serial.println("Card Not Valid"); // Tell the serial interface no match found
        
-   for ( uint8_t i = 0; i < 6; i++)      // Toggle the Red LEDs a few times
+   for ( uint8_t i = 0; i < 3; i++)      // Toggle the Red LEDs a few times
    {
-     PORTC ^= (1 << RED_LED);            // Bitwise for toggle
-     delay(200);                         // Allow for a small delay, for human reaction time to see the blinking
+     digitalWrite(RED_LED, LOW);
+     delay(200);
+     digitalWrite(RED_LED, HIGH);
+     delay(200); 
    }
    delay(500); //This just slows down the event so that "No match was found" can be displayed on the LCD
   }
@@ -348,11 +326,51 @@ if (swipeState == true) // If a swipe has occured, do something with the results
  *******************************************************************************************************/
  void serialRecieveFlush()
  {
- while(rfidSerial.available()) //flushes out rfidSerial data on the incoming path
+  while(rfidSerial.available()) //flushes out rfidSerial data on the incoming path
   rfidSerial.read(); 
   return; 
  }
+  
+ /*******************************************************************************************************
+ * Function Name: performCardRead()
+ * 
+ * Author: Bradford Henson
+ * 
+ * Description: The following function was provided by the manufacture of the reader (Parallax).
+ * It was downloaded from the Parallax product website.
+ * 
+ * When the RFID Reader is active and a valid RFID tag is placed with range of the reader, 
+ * the tag's unique ID will be transmitted as a 12-byte printable ASCII string to the host 
+ * (start byte + ID + stop byte)
+ * 
+ * For example, for a tag with a valid ID of 0F0184F07A, the following bytes would be sent:
+ * 0x0A, 0x30, 0x46, 0x30, 0x31, 0x38, 0x34, 0x46, 0x30, 0x37, 0x41, 0x0D
+ * We'll receive the ID and convert it to a null-terminated string with no start or stop byte.
+ * 
+ * The only thing that was changed from orginal source code is the addition of a swipeState variable, used
+ * to determine the state during a programming event. 
+ *******************************************************************************************************/
+ void performCardRead()
+ {
 
+ if (rfidSerial.available() > 0) // If there are any bytes available to read, then the RFID Reader has probably seen a valid tag
+      {
+        rfidData[offset] = rfidSerial.read();  // Get the byte and store it in our buffer
+        if (rfidData[offset] == RFID_START)    // If we receive the start byte from the RFID Reader, then get ready to receive the tag's unique ID
+        {
+          offset = -1;     // Clear offset (will be incremented back to 0 at the end of the loop)
+        }
+        else if (rfidData[offset] == RFID_STOP)  // If we receive the stop byte from the RFID Reader, then the tag's entire unique ID has been sent
+        {
+          rfidData[offset] = 0; // Null terminate the string of bytes we just received
+          swipeState = 1;
+        }
+        offset++;  // Increment offset into array
+        if (offset >= BUFSIZE) offset = 0; // If the incoming data string is longer than our buffer, wrap around to avoid going out-of-bounds
+      }
+      
+  return; 
+ }
  /*******************************************************************************************************
  * Function Name: selectUserInterface()
  * 
@@ -374,16 +392,18 @@ if (swipeState == true) // If a swipe has occured, do something with the results
        selectedUser = user + 1;            // Set the selectedUser to the next available one, becuase we want the next user
        nextUserFlag = 1;                   // keeps us in the select user portion of the programming mode
        delay(200);                         // Just slows down uC for humans
-       break;                              // break out of this while loop
+      break;                              // break out of this while loop
       }
-       if ((PINC & (1 << ENTER_BUTTON)) == 0) //if the Enter button is pressed, do the following
-       {
-         nextUserFlag = 0;                    // We don't want to be in the select user portion anymore
-         enterButtonFlag = 1;                 // flags that a user was selected, used to exit the user selection while loop
-         selectedUser = user;                 // sets the variable -slectedUser- to the currently selected user                
-         delay(200);                          // Just slows down uC for humans   
-         break;                               // break out of this while loop
+      
+      if ((PINC & (1 << ENTER_BUTTON)) == 0) //if the Enter button is pressed, do the following
+      {
+        nextUserFlag = 0;                    // We don't want to be in the select user portion anymore
+        enterButtonFlag = 1;                 // flags that a user was selected, used to exit the user selection while loop
+        selectedUser = user;                 // sets the variable -slectedUser- to the currently selected user                
+        delay(200);                          // Just slows down uC for humans   
+       break;                               // break out of this while loop
         }
+       
        timeOutCounter++;                      // Increment the time out counter
        if (timeOutCounter > TIMEOUT)          // When the counter reaches the defined (at the top) value, break out of loop
        {
@@ -404,15 +424,26 @@ if (swipeState == true) // If a swipe has occured, do something with the results
  *******************************************************************************************************/
 void programmingMode(void)
 {
-  programButtonState = 0; // At the conclusion of programming mode function, set the state back to 0
-  digitalWrite(enablePin, HIGH);              // deactivate the RFID reader
-  timeOutCounter = 0;                         // Set the time out counter to zero
-  enterButtonFlag = 0;                        // Set initial state of the enter button flag (used for exiting the while loop
+  programButtonState = 0;         //Sets the state back to 0 so that the button can trigger another event later
+  digitalWrite(enablePin, HIGH);  // deactivate the RFID reader
+  timeOutCounter = 0;             // Set the time out counter to zero
+  enterButtonFlag = 0;            // Set initial state of the enter button flag (used for exiting the while loop)
   invalidMasterCard = 0;
-  boolean masterSwipeResult;       // used to store the result of the master card swipe as a boolean value
-  int masterUsers[2] = {0, 200};   // the two master position are 0 and 800
-  
+  boolean masterSwipeResult;      // used to store the result of the master card swipe as a boolean value
+  int masterUsers[2] = {0, 200};  // the two master position are 0 and 200, 200 is hardcoded
+  swipeState = 0;
+  rfidData[0] = 0;              // Clear the buffer 
 
+  
+    /********************************************************************************************************
+    * Check to see if the hardcoded backup user is in memory, if not write a predefined value (at the top)
+    * to EEPROM memory. This should not happen very often, but is needed incase the EEPROM was erase 
+    * somehow. This would allow the backup user to program new cards as users.
+    *******************************************************************************************************/
+      //The Char readInArray is initalized with some data becuase Arduino kept screwing up
+      //without this being done. There would be extra data points appended to the string
+      //even when it was ended with a null character. Initializing with some data will get the
+      //compiler to add the null character, and everything works as intended.
       char backUpUserTemp[] = "0123456789";   // char array used to store values from EEPROM
       for (uint8_t i = 0; i < 10; i++) //loop allows each char to be read for a given user
       {
@@ -429,61 +460,45 @@ void programmingMode(void)
         {
          EEPROM.write(masterUsers[1] + i, backUpUser[i]);
         }          
-      } 
+      }
+
   lcd.setCursor(0, 0);                        // Set the cursor location setCursor(column, row)
-  lcd.print("Master Card Is   ");              // indicate on the LCD that it is in programming mode
+  lcd.print("Master Card Is   ");             // indicate on the LCD that it is in programming mode
   lcd.setCursor(0, 1);                        // Set the cursor location setCursor(column, row)
   lcd.print("Required        ");              // Set the LCD to press enter to continue
-  rfidData[0] = 0;              // Clear the buffer 
-  serialRecieveFlush();         //Flush the recieve data from the Serial Stream - prevents double scans
+
   digitalWrite(enablePin, LOW); // enable the RFID Reader
-  swipeState = 0;
-  
-  PORTC |= (1 << GREEN_LED);     // Turn on the Green LED, the reader is ready for a card
-  PORTC &= ~(1 << RED_LED);      // Turn off the Red LED, the reader is ready for a card
+  digitalWrite(GREEN_LED, HIGH);   // Turn on the Green LED, the reader is ready for a card
+  digitalWrite(RED_LED, LOW);      // Turn off the Red LED, the reader is ready for a card
   
   serialRecieveFlush(); //Flush the recieve data from the Serial Stream - prevents double scans
   
-  while(1) //Start waiting for a swipe or the bypass button, limit the time it waits by xxxx cycles
+  do //Start waiting for a swipe or the bypass button, limit the time it waits by xxxx cycles
   {
     if ((PINC & (1 << BYPASS_BUTTON)) == 0)
     {
+      Serial.println(BYPASS_BUTTON);
       swipeState = 2;
       break;
     }
     
-    if (rfidSerial.available() > 0) // If there are any bytes available to read, then the RFID Reader has probably seen a valid tag
-      {
-        rfidData[offset] = rfidSerial.read();  // Get the byte and store it in our buffer
-        if (rfidData[offset] == RFID_START)    // If we receive the start byte from the RFID Reader, then get ready to receive the tag's unique ID
-        {
-          offset = -1;     // Clear offset (will be incremented back to 0 at the end of the loop)
-        }
-        else if (rfidData[offset] == RFID_STOP)  // If we receive the stop byte from the RFID Reader, then the tag's entire unique ID has been sent
-        {
-          rfidData[offset] = 0; // Null terminate the string of bytes we just received
-          swipeState = 1;
-          break;
-        }
-        offset++;  // Increment offset into array
-        if (offset >= BUFSIZE) offset = 0; // If the incoming data string is longer than our buffer, wrap around to avoid going out-of-bounds
-      }
+     performCardRead();
+     if (swipeState == 1) break;
       
      timeOutCounter++;                          // Increment the timeout counter
      Serial.println(timeOutCounter);            // Send the value of the counte to serial, for testing purposes
-     if (timeOutCounter > TIMEOUT)              // When the counter reaches the defined (at the top) value, break out of loop
-     {
-      break; 
-     }
-  }
-  PORTC |= (1 << RED_LED);                      // Turn on the Red LED, the reader is not ready
-  PORTC &= ~(1 << GREEN_LED);                   // Turn off the Green LED, the reader is not ready
+
+  } while (timeOutCounter < TIMEOUT);
+  
+  digitalWrite(RED_LED, HIGH);                  // Turn on the Red LED, the reader is not ready
+  digitalWrite(GREEN_LED, LOW);                 // Turn off the Green LED, the reader is not ready
   digitalWrite(enablePin, HIGH);                // disable RFID Reader 
   delay(200);
+  
   if (swipeState == 1)
   {
   compareCounter = 0;
-  while (1)
+  do
   {                                             
       lcd.setCursor(0, 0);           // Set the cursor location setCursor(column, row)
       lcd.print("Comparing Tags  "); // indicate on the LCD the current state 
@@ -518,22 +533,16 @@ void programmingMode(void)
       // increments the counter to prevent the while loop from not ending
       // the copareCounter is also used when reading the EEPROM data
       compareCounter++;      // this will make sure that the compare loop only happens 2 times 
-      delay(50);
-      if(compareCounter > 1) // The compare counter would have to be adjusted if more users are added
-      
-      {
-       break;  //When a total of 2 comparisons have been made, break out of the loop
-      }
-    }
+    }while (compareCounter < 2); // The compare counter would have to be adjusted if more users are added
   }
- PORTC |= (1 << RED_LED);                     // Turn on the Red LED, reader is not ready
- PORTC &= ~(1 << GREEN_LED);                  // Turn off the Greed LED, reader is not ready
+ digitalWrite(RED_LED, HIGH);                   // Turn on the Red LED, reader is not ready
+ digitalWrite(GREEN_LED, LOW);                  // Turn off the Greed LED, reader is not ready
  
- if (swipeState == 1 || swipeState == 2 && masterSwipeResult == 1)
+ if ((swipeState == 1 && masterSwipeResult == 1) || swipeState == 2)
  {
  timeOutCounter = 0;
   //The following loop provides the user selection interface during a programming event
-  while (1)                                   // Select User Loop
+  do                                   // Select User Loop
   {    
       Serial.println(timeOutCounter);         // Send the timeout counter value to serial
 
@@ -640,11 +649,7 @@ void programmingMode(void)
               }
             }        
     timeOutCounter++;                   // Increment the time out counter
-    if (timeOutCounter > TIMEOUT)       // When the counter reaches the defined (at the top) value, break out of loop
-     {
-      break; 
-     }
-   }
+   } while (timeOutCounter < TIMEOUT);  // When the counter reaches the defined (at the top) value, break out of loop
 
   delay(50); // this delay prevents the program from jumping into the following if statement unintentially
   
@@ -656,8 +661,8 @@ void programmingMode(void)
   lcd.setCursor(0, 1);
   lcd.print("Swipe New Card  ");
   
-  PORTC |= (1 << GREEN_LED);             // Turn on the Green LED, the reader is ready for a card
-  PORTC &= ~(1 << RED_LED);              // Turn off the Red LED, the reader is ready for a card
+  digitalWrite(GREEN_LED, HIGH);           // Turn on the Green LED, the reader is ready for a card
+  digitalWrite(RED_LED, LOW);              // Turn off the Red LED, the reader is ready for a card
   
   rfidData[0] = 0;         // Clear the buffer 
   serialRecieveFlush(); //Flush the recieve data from the Serial Stream - prevents double scans
@@ -668,36 +673,18 @@ void programmingMode(void)
  
   serialRecieveFlush(); //Flush the recieve data from the Serial Stream - prevents double scans
   
-  while(1) //Start waiting for a swipe, limit the time it waits by xxxx cycles
+  do  //Start waiting for a swipe, limit the time it waits by xxxx cycles
   {
-    if (rfidSerial.available() > 0) // If there are any bytes available to read, then the RFID Reader has probably seen a valid tag
-      {
-        rfidData[offset] = rfidSerial.read();  // Get the byte and store it in our buffer
-        if (rfidData[offset] == RFID_START)    // If we receive the start byte from the RFID Reader, then get ready to receive the tag's unique ID
-        {
-          offset = -1;     // Clear offset (will be incremented back to 0 at the end of the loop)
-        }
-        else if (rfidData[offset] == RFID_STOP)  // If we receive the stop byte from the RFID Reader, then the tag's entire unique ID has been sent
-        {
-          rfidData[offset] = 0; // Null terminate the string of bytes we just received
-          swipeState = 1;
-          break;
-        }
-        offset++;  // Increment offset into array
-        if (offset >= BUFSIZE) offset = 0; // If the incoming data string is longer than our buffer, wrap around to avoid going out-of-bounds
-      }
+     performCardRead();
+     if (swipeState == 1) break;
       
      timeOutCounter++;                          // Increment the timeout counter
      Serial.println(timeOutCounter);            // Send the value of the counte to serial, for testing purposes
-     if (timeOutCounter > TIMEOUT)              // When the counter reaches the defined (at the top) value, break out of loop
-     {
-      break; 
-     }
   }
-  PORTC |= (1 << RED_LED);                      // Turn on the Red LED, the reader is not ready
-  PORTC &= ~(1 << GREEN_LED);                   // Turn off the Green LED, the reader is not ready
-  //Serial.println(rfidData);                   // The rfidData string should now contain the tag's unique ID with a null termination
-  //Serial.flush();                             // Wait for all bytes to be transmitted to the Serial Monitor
+  while (timeOutCounter < TIMEOUT);  // When the counter reaches the defined (at the top) value, break out of loop
+  
+  digitalWrite(RED_LED, HIGH);                  // Turn on the Red LED, the reader is not ready
+  digitalWrite(GREEN_LED, LOW);                 // Turn off the Green LED, the reader is not ready
   digitalWrite(enablePin, HIGH);                // disable RFID Reader 
   delay(500);                                   // this delay haults the uC before moving on to something else  
   
