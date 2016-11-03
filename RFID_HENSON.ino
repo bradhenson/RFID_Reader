@@ -7,8 +7,11 @@ License: USE AT YOUR OWN RISK
 
 Description: 
 ------------
-RFID_Henson provides a simple RFID reader application for storing up 
-to 10 users in program memory and then compares a scanned card to each of the users. 
+This project was developed to provide communcation between a Parallax RFID reader, 
+Arduino UNO, and a custom user interface (LCD, Buttons..).
+
+RFID_Henson provides a simple RFID reader application for storing up to 10 users 
+in the Arduino's EEPROM and then compares a scanned card to each of the users. 
 The output of a successful scan would send a 5 volt signal to the RELAY pin.
 An unsuccessful scan would prompt the user to try again with another card. This 
 application also provides a user interface via an LCD and several buttons that allow
