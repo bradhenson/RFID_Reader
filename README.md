@@ -26,27 +26,27 @@ no match is found the Red LED will flash several times.
 
 Hardware connections are as followed:
 -------------------------------------
-Arduino 4 to RFID Rx
-Arduino GND to RFID GND
-Arduino Digital pin 2 to RFID enable
-Arduino +5V to RFID VCC pin.
-Arduino Digital pin 5 used to supply a signal to the locking mechanism
-LCD RS pin to digital pin 12
-LCD Enable pin to digital pin 11
-LCD D4 pin to digital pin 10
-LCD D5 pin to digital pin 9
-LCD D6 pin to digital pin 8
-LCD D7 pin to digital pin 7
-LCD R/W pin to ground
-LCD VSS pin to ground
-LCD VCC pin to 5V
-LCD VO pin (pin 3) is used to dim the display via a pot, could use PWM for this
-Arduino Digital pin 3 used to connect to a button for initiating programming mode
-Arduino Analog pin 0 used to connect to a button for ENTER
-Arduino Analog pin 1 used to connect to a button for NEXT
-Arduino Analog pin 4 used to connect to a Green LED
-Arduino Analog pin 5 used to connect to a Red LED
-Arduino Analog pin 2 used to connect to a button for BYPASS
+- Arduino 4 to RFID Rx
+- Arduino GND to RFID GND
+- Arduino Digital pin 2 to RFID enable
+- Arduino +5V to RFID VCC pin.
+- Arduino Digital pin 5 used to supply a signal to the locking mechanism
+- LCD RS pin to digital pin 12
+- LCD Enable pin to digital pin 11
+- LCD D4 pin to digital pin 10
+- LCD D5 pin to digital pin 9
+- LCD D6 pin to digital pin 8
+- LCD D7 pin to digital pin 7
+- LCD R/W pin to ground
+- LCD VSS pin to ground
+- LCD VCC pin to 5V
+- LCD VO pin (pin 3) is used to dim the display via a pot, could use PWM for this
+- Arduino Digital pin 3 used to connect to a button for initiating programming mode
+- Arduino Analog pin 0 used to connect to a button for ENTER
+- Arduino Analog pin 1 used to connect to a button for NEXT
+- Arduino Analog pin 4 used to connect to a Green LED
+- Arduino Analog pin 5 used to connect to a Red LED
+- Arduino Analog pin 2 used to connect to a button for BYPASS
 
 Additional hardware considerations:
 -------------------------------------
