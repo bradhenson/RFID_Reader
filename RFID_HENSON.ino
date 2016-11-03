@@ -1,4 +1,3 @@
-
 /********************************************************************************
 Author: Bradford Henson
 Date: 11/3/2016
@@ -58,7 +57,7 @@ Arduino Analog pin 4 used to connect to a Green LED
 Arduino Analog pin 5 used to connect to a Red LED
 Arduino Analog pin 2 used to connect to a button for BYPASS
 
-Additional hardware considerations:
+Additional considerations:
 -------------------------------------
 - This application was written to work with the Parallax RFID Reader #28140. Some alternatives do 
   exist but have been tested with this application. This includes RFIDuino, which uses the same
@@ -385,21 +384,24 @@ rfidSerial.begin(2400);         // set the baud rate for the SoftwareSerial port
  *******************************************************************************************************/
  void performCardRead()
  {
-
- if (rfidSerial.available() > 0) // If there are any bytes available to read, then the RFID Reader has probably seen a valid tag
+ // If there are any bytes available to read, then the RFID Reader has probably seen a valid tag
+ if (rfidSerial.available() > 0) 
       {
         rfidData[offset] = rfidSerial.read();  // Get the byte and store it in our buffer
-        if (rfidData[offset] == RFID_START)    // If we receive the start byte from the RFID Reader, then get ready to receive the tag's unique ID
+        // If we receive the start byte from the RFID Reader, then get ready to receive the tag's unique ID
+        if (rfidData[offset] == RFID_START)    
         {
           offset = -1;     // Clear offset (will be incremented back to 0 at the end of the loop)
         }
-        else if (rfidData[offset] == RFID_STOP)  // If we receive the stop byte from the RFID Reader, then the tag's entire unique ID has been sent
+        // If we receive the stop byte from the RFID Reader, then the tag's entire unique ID has been sent
+        else if (rfidData[offset] == RFID_STOP)  
         {
           rfidData[offset] = 0; // Null terminate the string of bytes we just received
           swipeState = 1;
         }
         offset++;  // Increment offset into array
-        if (offset >= BUFSIZE) offset = 0; // If the incoming data string is longer than our buffer, wrap around to avoid going out-of-bounds
+        // If the incoming data string is longer than our buffer, wrap around to avoid going out-of-bounds
+        if (offset >= BUFSIZE) offset = 0; 
       }
       
   return; 
@@ -596,18 +598,20 @@ void programmingMode(void)
        }                                     
        if (nextUserFlag == 1)                 // This the user selection portion of the programming mode
        {                
-           switch (selectedUser)              // This will allow the users to be cycled through based on the the selectedUser variable
+           switch (selectedUser)  // This will allow the users to be cycled through based on the the selectedUser variable
            {
                 case 1:                       
-                    //The function calls for the display could be moved to the selectUserInterface() function. However, the value being passed
-                    //to the function is an integer and I was having trouble with using an integer directly in the LCD.print() function. I would
-                    //imagine this value would need to be a string data type.                   
+                    
+                    //The function calls for the display could be moved to the selectUserInterface() function. 
+                    //However, the value being passed to the function is an integer and I was having trouble 
+                    //with using an integer directly in the LCD.print() function. I would imagine this value 
+                    //would need to be a string data type.                
                     lcd.setCursor(0, 0);               // Set the inital LCD Screen state for the user
                     lcd.print("User 1 Press -  ");     // Sets the message on the LCD
                     lcd.setCursor(0, 1);               // Set the cursor location to the bottom left position
                     lcd.print("ENTER or NEXT   ");     // Prompt for either the Enter button or the Next button
                     delay(500);                        // Slow the uC down to prevent it jumping directly to the next state 
-                    selectUserInterface(selectedUser); // Do something based on which button is pressed, function is defined earlier
+                    selectUserInterface(selectedUser); // Do something based on which button is pressed
                   break;
                 case 2:
                     lcd.setCursor(0, 0);    
@@ -725,11 +729,11 @@ void programmingMode(void)
   digitalWrite(enablePin, HIGH);                // disable RFID Reader 
   delay(500);                                   // this delay haults the uC before moving on to something else  
   
-  if (swipeState == 1)                          // If a swipe did occur, write the value to EEPROM at the selectedUser position in memory
+  if (swipeState == 1)  // If a swipe did occur, write the value to EEPROM at the selectedUser position in memory
   {
      lcd.setCursor(0, 0);                       // Set the cursor location setCursor(column, row)
      lcd.print("Input Recieved  ");             // Sets the desired message to the display
-     uint8_t userAddress = selectedUser - 1;    // The selectedUser will be one value higher then it's corrisponding position within the users[] array
+     uint8_t userAddress = selectedUser - 1;    // The selectedUser will be one value higher then the users[] array
                                                 // Subtracting one allows us to reference the users[] array directly
       // write the new RFID value to EEPROM for a specified user
       for (uint8_t i = 0; i < 10; i++)
@@ -762,11 +766,3 @@ void programmingMode(void)
      }
   }
 }
- 
-
-  
-
-
-
-
-
