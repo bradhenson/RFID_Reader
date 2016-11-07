@@ -12,18 +12,17 @@ user positions can be over written with a new card value by simply scanning the 
 when promted. In the event a card is lost, there is a need to delete that value from memory.
 Direct deletion is not possible, but it is intended that the master user would over write 
 the user position that needs to be deleted with it's own card information. 
-
 The total time the defined RELAY pin is turned on (HIGH) can be adjusted as a simple interger data 
 type.
-
-At anytime while in programming mode, if no action is taken the system will timeout and 
-return to a normal operating state (Ready to Read). The timeout can be adjusted by changing
-the numerical value defined as TIMEOUT.
 
 The Red and Green LEDs will indicate one of four states. If the Red LED is solid on, then the reader
 is not ready to read. If the Green LED is solid on the reader is ready for a card to be swiped. When
 a card is found to be a match to a user in memory, then the Green LED will flash several times. When
 no match is found the Red LED will flash several times.
+
+At anytime while in programming mode, if no action is taken the system will timeout and 
+return to a normal operating state (Ready to Read). The timeout can be adjusted by changing
+the numerical value defined as TIMEOUT.
 
 Hardware connections are as followed:
 -------------------------------------
@@ -32,31 +31,30 @@ Hardware connections are as followed:
 - Arduino Digital pin 2 to RFID enable
 - Arduino +5V to RFID VCC pin.
 - Arduino Digital pin 5 used to supply a signal to the locking mechanism
-- LCD RS pin to digital pin 12
-- LCD Enable pin to digital pin 11
-- LCD D4 pin to digital pin 10
-- LCD D5 pin to digital pin 9
-- LCD D6 pin to digital pin 8
-- LCD D7 pin to digital pin 7
-- LCD R/W pin to ground
-- LCD VSS pin to ground
-- LCD VCC pin to 5V
-- LCD VO pin (pin 3) is used to dim the display via a pot, could use PWM for this
+- Arduino Digital pin 5 has an LED connected to signal when this pin is HIGH
 - Arduino Digital pin 3 used to connect to a button for initiating programming mode
-- Arduino Analog pin 0 used to connect to a button for ENTER
-- Arduino Analog pin 1 used to connect to a button for NEXT
-- Arduino Analog pin 4 used to connect to a Green LED
-- Arduino Analog pin 5 used to connect to a Red LED
-- Arduino Analog pin 2 used to connect to a button for BYPASS
+- Arduino pin 8 used to connect to a button for ENTER
+- Arduino pin 6 used to connect to a button for NEXT
+- Arduino Analog pin 0 used to connect to a Green LED
+- Arduino Analog pin 1 used to connect to a Red LED
+- Arduino Analog pin 9 used for BYPASS
+- Arduino SDA and SCL (I2C) will go to the LCD Backpack
+- Arduino SDA and SCL (I2C) will also connect to the RTC via the shield
+- Arduino 10, 11, 12, 13 (SPI) connect tot he SD card reader via the shield
 
-Additional hardware considerations:
+Additional considerations:
 -------------------------------------
 - This application was written to work with the Parallax RFID Reader #28140. Some alternatives do 
   exist but have been tested with this application. This includes RFIDuino, which uses the same
   analog RFID front end chip (EM4095). How the RFIDuino transimits the 10 digit char array may not
   be the same as the Parallax implementation.
-- The Red and Green leds are connected to ground via a pull down resistor, which is 470 ohms each.
-- The connections to the external components (ie, Red and Greed led, Relay, and RFID Reader
-  are all connected using screw post terminals.
-- Another LED can be put in line with the RELAY pin to give a visual
-  inidication that power is being applied to the relay.
+- An Adafruit datalogging shield is used to supply connections to an RTC and SD card. Standard libraries 
+  list by Adafruit are used for these functions. The SD card is connected to the SPI points and the RTC
+  is connected to I2C.
+  https://learn.adafruit.com/adafruit-data-logger-shield
+- A backpack is used with the LCD to provide connectivity with fewer pins. It also uses the I2C.
+  The library used for the backpack in the prototype is from the following website. This effectively
+  replaces (extends functionality) the standard LiquidCrystal library. 
+  https://bitbucket.org/fmalpartida/new-liquidcrystal/downloads/NewliquidCrystal_1.3.4.zip
+  A good turtorial for using this type of backpack is at:
+  http://arduino-info.wikispaces.com/LCD-Blue-I2C
