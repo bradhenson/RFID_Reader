@@ -24,6 +24,22 @@ At anytime while in programming mode, if no action is taken the system will time
 return to a normal operating state (Ready to Read). The timeout can be adjusted by changing
 the numerical value defined as TIMEOUT.
 
+The LCD backlight is set to turn off if the device is left inthe Ready to Read state for a 
+specified number of cycles. Once the device exits the Ready to Read state, either by 
+pressing the programming button or swiping a card, the LCD backlight will turn back on.
+
+At start up the device will check to see if there is an SD card present. If no SD card is present,
+a message will be displayed stating to check the card and recycle power. This will not stop
+the unit from functioning normally, but will indicate that the logfile will not be written to
+until the issue with the SD card is cleared up. Additionally, if the SD card is not available 
+upon a successful unlock (match), then the an error message will be displayed stating to check the 
+card and recycle power. This error will not stop the relay pin from becoming active. It only 
+indicates that the logfile will not be updated.
+
+In the event that all programmed cards are not available to get passed the requirement for a Master
+card swipe when entering programming mode, it is possible to bypass this requirement if digital pin 9
+is pulled to ground when the LCD prompts for a Master Card.
+
 Hardware connections are as followed:
 -------------------------------------
 - Arduino 4 to RFID Rx
