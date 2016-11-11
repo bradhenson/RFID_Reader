@@ -106,6 +106,8 @@ Additional considerations:
  #define BYPASS_BUTTON 9    // Bypass on Digital pin 9
  #define RELAY 5            // Relay output on Digital pin 5
  #define chipSelect 10      // chip select should be identified, even when not in use
+ #define approachingMax 200000000
+ #define maxFilesize 300000000
 
 /********************************************************************************
   
@@ -113,7 +115,7 @@ Define the amount of time in milli seconds the relay should stay on
 
 *********************************************************************************/
 
-#define RELAY_TIME 2000    //Change the numerical value (milliseconds)
+#define RELAY_TIME 1000    //Change the numerical value (milliseconds)
 
 /********************************************************************************
   
@@ -144,7 +146,8 @@ in the event the other master card is lost.
  RTC_DS1307 rtc; 
  SoftwareSerial rfidSerial =  SoftwareSerial(rxPin, txPin); // set up a new serial port for RFID reader
  LiquidCrystal_I2C lcd(0x27, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE); // A new LCD library has to be installed
-
+ File logfile; // the logging file
+ 
  char rfidData[BUFSIZE];            // Buffer for incoming data (when reading the RFID Card)
  char offset = 0;                   // Offset into buffer (when reading the RFID Card)
  uint8_t selectedUser = 0;          // Create a selected user variable (programming function)
@@ -153,12 +156,13 @@ in the event the other master card is lost.
  uint8_t programButtonState = 0;    // Used to determine when the programming button was pushed
  uint8_t compareCounter = 0;        // Used to control the loop when comparing
  int timeOutCounter = 0;            // Used through out the programming mode section
- boolean nextButtonState = 0;       // Used to determine if the Next Button is being pressed
- boolean enterButtonState = 0;      // Used to determine if the Enter Button is being pressed
+ uint8_t nextButtonState;       // Used to determine if the Next Button is being pressed
+ uint8_t enterButtonState;      // Used to determine if the Enter Button is being pressed
  boolean nextUserFlag = 0;          // Create a user flag for programming mode function
  boolean enterButtonFlag = 0;       // Create a button flag for programming mode function
  boolean bypassButtonState = 0;     // Used to determine if the Bypass Button is being pressed
  boolean invalidMasterCard = 0;     // Used to determine if an invalid Master card was used 
+ uint32_t fileSize = 0;
 /*********************************************************************************
 The following user addresses identify the starting location in EEPROM where that
 specific user's code will be stored. Example: Codes are 10 position int arrays, so position 
@@ -235,6 +239,47 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     lcd.print(F("SD is Present   "));   // Set the message to be displayed
     delay(500);                        // Delay the message so it can be read by humans
   }
+  
+  logfile = SD.open("logfile.txt");
+  fileSize = logfile.size();
+  Serial.print(F("logfile size is: "));
+  Serial.println(fileSize);
+  
+  if (fileSize > approachingMax && fileSize < maxFilesize)
+  {
+    Serial.println(F("Recommend clearing logfile on the SD card"));
+    lcd.setCursor(0, 0);
+    lcd.print(F("Recommend clear "));
+    lcd.setCursor(0, 1);
+    lcd.print(F("logfile on SD   "));
+    for ( uint8_t i = 0; i < 10; i++)     // Toggle the Green and Red LEDs 10 times
+    {
+     digitalWrite(GREEN_LED, HIGH);
+     delay(200);
+     digitalWrite(GREEN_LED, LOW);
+     delay(200); 
+    }
+    delay(2000);
+  }
+
+    if (fileSize > maxFilesize)
+  {
+    Serial.println(F("logfile is to large, logging is disabled"));
+    Serial.println(F("Recommend clearing the SD card"));
+    lcd.setCursor(0, 0);
+    lcd.print(F("logfile to large"));
+    lcd.setCursor(0, 1);
+    lcd.print(F("Clear SD Card   "));
+    for ( uint8_t i = 0; i < 10; i++)     // Toggle the Red LEDs 10 times
+    {
+     digitalWrite(RED_LED, HIGH);
+     delay(200);
+     digitalWrite(RED_LED, LOW);
+     delay(200); 
+    }    
+    delay(2000);
+  }
+  logfile.close();
 }  
 /*******************************************************************************************************
 * 
@@ -363,7 +408,28 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
      
     delay(RELAY_TIME);                   //This is a delay for how long the relay needs a signal
     digitalWrite(RELAY, LOW);            //turn the relay off
-    timeStamp();
+    if(fileSize < maxFilesize)
+    {
+      timeStamp();
+    }
+    else
+    {
+    Serial.println(F("logfile is to large, logging is disabled"));
+    Serial.println(F("Recommend clearing the SD card"));
+    lcd.setCursor(0, 0);
+    lcd.print(F("logfile to large"));
+    lcd.setCursor(0, 1);
+    lcd.print(F("Clear SD Card   "));
+    for ( uint8_t i = 0; i < 10; i++)     // Toggle the Red LEDs 10 times
+    {
+     digitalWrite(RED_LED, HIGH);
+     delay(200);
+     digitalWrite(RED_LED, LOW);
+     delay(200); 
+    }    
+    delay(2000);
+    }
+    
   }
   else                                   // When no match is found do this
   {
@@ -462,7 +528,6 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
  void timeStamp()
  {
     DateTime now = rtc.now();
-    File logfile; // the logging file
     logfile = SD.open("logfile.txt", FILE_WRITE);
     
     // if the file opened okay, write to it:
@@ -542,6 +607,7 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
       
   return; 
  }
+
  /*******************************************************************************************************
  * Function Name: selectUserInterface()
  * 
@@ -554,7 +620,9 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
  
  void selectUserInterface(uint8_t user)
  {                   
-   // Set the initial prompt to the user
+   /*******************************
+    * Set the initial prompt to the user
+    ******************************/
    lcd.setCursor(0, 0);                   // Set the initial position of on the LCD
    lcd.print(F("User "));                 // Start on the first line with the word "User "
    lcd.setCursor(5, 0);                   // Set cursor position just after the word user
@@ -570,12 +638,14 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
    lcd.print(F(" Press -  "));            // Finish the first line with "Press - "
    lcd.setCursor(0, 1);                   // Set cursor to the start of the second line
    lcd.print(F("ENTER or NEXT   "));      // Prompt user to press the next or enter button
-   delay(500);                            // Keeps from changing users to fast on a button press
+   delay(300);                            // Keeps from changing users to fast on a button press
+   
    
    timeOutCounter = 0;                    // Zero out the time out counter before entering the loop
    while(1)
    {
-     Serial.println(timeOutCounter);      // Tell the serial interface what the count is
+     //Serial.println(timeOutCounter);      // Tell the serial interface what the count is
+     
      if (digitalRead(NEXT_BUTTON) == 1)   // if the Next button is pressed, do the following
      {                                    // The pin is compared to 0 because it is being pulled up by the debouce hardware
        selectedUser = user + 1;           // Set the selectedUser to the next available one, becuase we want the next user
@@ -594,6 +664,7 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
         }
        
        timeOutCounter++;                   // Increment the time out counter
+       delay(10);
        if (timeOutCounter > TIMEOUT)       // When the counter reaches the defined (at the top) value, break out of loop
        {
         selectedUser = 0;                  // If no user was selected (ie timeout happended), sets variable to 0
@@ -682,8 +753,7 @@ void programmingMode(void)
   digitalWrite(RED_LED, HIGH);          // Turn on the Red LED, the reader is not ready
   digitalWrite(GREEN_LED, LOW);         // Turn off the Green LED, the reader is not ready
   digitalWrite(enablePin, HIGH);        // disable RFID Reader 
-  delay(200);
-  
+    
   if (swipeState == 1)
   {
   compareCounter = 0;
@@ -736,8 +806,7 @@ void programmingMode(void)
   
   do //The following loop provides the user selection interface during a programming event
   {    
-      //Serial.println(timeOutCounter);         // Send the timeout counter value to serial
-
+      Serial.println(timeOutCounter);         // Send the timeout counter value to serial
        if (masterSwipeResult == 1 || swipeState == 2)
        {
          selectedUser = 1;                    // Sends the program to the first user in the following SWITCH statement
