@@ -32,6 +32,22 @@ At anytime while in programming mode, if no action is taken the system will time
 return to a normal operating state (Ready to Read). The timeout can be adjusted by changing
 the numerical value defined as TIMEOUT.
 
+The LCD backlight is set to turn off if the device is left inthe Ready to Read state for a 
+specified number of cycles. Once the device exits the Ready to Read state, either by 
+pressing the programming button or swiping a card, the LCD backlight will turn back on.
+
+At start up the device will check to see if there is an SD card present. If no SD card is present,
+a message will be displayed stating to check the card and recycle power. This will not stop
+the unit from functioning normally, but will indicate that the logfile will not be written to
+until the issue with the SD card is cleared up. Additionally, if the SD card is not available 
+upon a successful unlock (match), then the an error message will be displayed stating to check the 
+card and recycle power. This error will not stop the relay pin from becoming active. It only 
+indicates that the logfile will not be updated.
+
+In the event that all programmed cards are not available to get passed the requirement for a Master
+card swipe when entering programming mode, it is possible to bypass this requirement if digital pin 9
+is pulled to ground when the LCD prompts for a Master Card.
+
 Hardware connections are as followed:
 -------------------------------------
 Arduino 4 to RFID Rx
@@ -79,16 +95,17 @@ Additional considerations:
  
  #define enablePin  2       // Connects to the RFID's ENABLE pin
  #define rxPin      4       // Serial input (connects to the RFID's SOUT pin)
- #define txPin      9      // Serial output (unused)
+ #define txPin      9       // Serial output (unused)
  #define BUFSIZE    11      // Size of receive buffer (in bytes) (10-byte unique ID + null character)
  #define RFID_START  0x0A   // RFID Reader Start byte
  #define RFID_STOP   0x0D   // RFID Reader Stop byte
- #define GREEN_LED A0       
- #define RED_LED A1         
- #define ENTER_BUTTON 8     
- #define NEXT_BUTTON 6      
- #define BYPASS_BUTTON 9    
- #define RELAY 5            
+ #define GREEN_LED A0       // Green LED on Analog pin 0
+ #define RED_LED A1         // Red LED on Analog pin 1
+ #define ENTER_BUTTON 8     // Enter button on Digital pin 8
+ #define NEXT_BUTTON 6      // Next button on Digital pin 6
+ #define BYPASS_BUTTON 9    // Bypass on Digital pin 9
+ #define RELAY 5            // Relay output on Digital pin 5
+ #define chipSelect 10      // chip select should be identified, even when not in use
 
 /********************************************************************************
   
@@ -97,6 +114,14 @@ Define the amount of time in milli seconds the relay should stay on
 *********************************************************************************/
 
 #define RELAY_TIME 2000    //Change the numerical value (milliseconds)
+
+/********************************************************************************
+  
+Define the amount of time in milli seconds the lcd backlight should stay on
+
+*********************************************************************************/
+
+#define BACKLIGHT_TIME 10000    //Timeout counter time (in cycles, not milliseconds)
 
 /********************************************************************************
 
@@ -116,8 +141,9 @@ in the event the other master card is lost.
 
  char backUpUser[] = "ABCD543210";
 
+ RTC_DS1307 rtc; 
  SoftwareSerial rfidSerial =  SoftwareSerial(rxPin, txPin); // set up a new serial port for RFID reader
- LiquidCrystal_I2C lcd(0x27, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE); 
+ LiquidCrystal_I2C lcd(0x27, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE); // A new LCD library has to be installed
 
  char rfidData[BUFSIZE];            // Buffer for incoming data (when reading the RFID Card)
  char offset = 0;                   // Offset into buffer (when reading the RFID Card)
@@ -139,13 +165,7 @@ specific user's code will be stored. Example: Codes are 10 position int arrays, 
 0 through 9 represent user one, 20 through 29 represent user two.
 *********************************************************************************/
  int users[10] = {0, 20, 40, 60, 80, 100, 120, 140, 160, 180};
- 
- RTC_DS1307 rtc; 
- 
- const uint8_t chipSelect = 10;
- 
- File logfile; // the logging file
- 
+
 /*******************************************************************************************************
 * 
 * 
@@ -193,35 +213,27 @@ if (! rtc.isrunning())
   // following line sets the RTC to the date & time this sketch was compiled
   
 }
-
-rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+// Sets the RTC to the time of the computer at the time of compiling
+rtc.adjust(DateTime(F(__DATE__), F(__TIME__))); 
 
 /**********************************
  * Display information about the SD card
  **********************************/
 
   Serial.print(F("\nInitializing SD card..."));
-  lcd.setCursor(0, 0);             // Set the cursor location setCursor(column, row)
+  lcd.setCursor(0, 0);                // Set the cursor location setCursor(column, row)
   lcd.print(F("Init.. SD Card  "));   // Set the message to be displayed
-  delay(500);
+  delay(500);                         // Delay the message so it can be read by humans
   
   if (!SD.begin(chipSelect)) {
     Serial.println(F("initialization failed!"));
-    Serial.println(F("Check card and recycle power"));
-    lcd.setCursor(0, 0);             // Set the cursor location setCursor(column, row)
-    lcd.print(F("SD not Present  "));   // Set the message to be displayed
-    delay(1000);
-    lcd.setCursor(0, 0);             // Set the cursor location setCursor(column, row)
-    lcd.print(F("Check Card and  "));   // Set the message to be displayed
-    lcd.setCursor(0, 1);             // Set the cursor location setCursor(column, row)
-    lcd.print(F("Recycle Power   "));   // Set the message to be displayed
-    delay(1000);
+    sdError();                        // Displays an SD error and recommendation to fix
     return;
   } else {
     Serial.println(F("Initialization Successfull"));
-    lcd.setCursor(0, 0);             // Set the cursor location setCursor(column, row)
+    lcd.setCursor(0, 0);                // Set the cursor location setCursor(column, row)
     lcd.print(F("SD is Present   "));   // Set the message to be displayed
-    delay(1000);
+    delay(500);                        // Delay the message so it can be read by humans
   }
 }  
 /*******************************************************************************************************
@@ -233,9 +245,9 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
 ********************************************************************************************************/
  void loop() { 
 
-  lcd.setCursor(0, 0);             // Set the cursor location setCursor(column, row)
+  lcd.setCursor(0, 0);                // Set the cursor location setCursor(column, row)
   lcd.print(F("Reader Is Ready "));   // Set up the initial message   
-  lcd.setCursor(0, 1);             // Set the cursor location setCursor(column, row)
+  lcd.setCursor(0, 1);                // Set the cursor location setCursor(column, row)
   lcd.print(F("                "));   // Clears out the second row of the LCD
 
 //Initialize the reader and start waiting for a swipe, once a read has occured
@@ -246,13 +258,15 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   
   serialRecieveFlush(); //Flush the recieve data from the Serial Stream - prevents double scans
   
-  digitalWrite(enablePin, LOW);           // enable the RFID Reader
+  digitalWrite(enablePin, LOW);              // enable the RFID Reader
   Serial.println(F("Ready for RFID Swipe")); // Output to serial that the reader is ready
   
   //Start waiting for a swipe, this program should be in this loop 90% of the time
 
   digitalWrite(GREEN_LED, HIGH); // When the card reader is ready to read a card, turn on the Green LED
   digitalWrite(RED_LED, LOW);    // When the card reader is ready to read a card, turn off the Red LED
+  
+  timeOutCounter = 0;
   while(1)   // Wait for a response from the RFID Reader
    {
       performCardRead();
@@ -261,25 +275,30 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
       //If the programming button was pushed during the waiting to read loop, execute programming function
       if (programButtonState == 1) 
       {
-        programmingMode();
-          lcd.setCursor(0, 0);             // Set the cursor location setCursor(column, row)
+          programmingMode();                  // Enter into programming mode
+          lcd.setCursor(0, 0);                // Set the cursor location setCursor(column, row)
           lcd.print(F("                "));   // Set up the initial message   
-          lcd.setCursor(0, 1);             // Set the cursor location setCursor(column, row)
+          lcd.setCursor(0, 1);                // Set the cursor location setCursor(column, row)
           lcd.print(F("                "));   // Clears out the second row of the LCD
-          swipeState = false;              // Sets the state of swipe to false because we just exited programming mode
-          rfidData[0] = 0;                 // Clear the buffer 
+          swipeState = false;                 // Sets the state of swipe to false because we just exited programming mode
+          rfidData[0] = 0;                    // Clear the buffer 
         break;
       }
+      timeOutCounter++;           // Increment the timeoutcounter for the LCD backlight
+      delay(5);                   // Without a small delay, the following if statement is executed even when not true
+      if (timeOutCounter > BACKLIGHT_TIME)
+      {
+        lcd.noBacklight();        // Turns off the LCD backlight (there is a transistor on the LCD backpack for this)
+      }
    }
+  lcd.backlight();                // Turn on the LCD backlight when exiting the Ready to Read state
   digitalWrite(RED_LED, HIGH);      // The reader is not ready, turn on the Red LED
   digitalWrite(GREEN_LED, LOW);     // The reader is not ready, turn off the Green LED
   digitalWrite(enablePin, HIGH);    // disable RFID Reader 
    
   Serial.print(F("The card that was swiped is: ")); // Message to be printed to the serial interface after a swipe
   Serial.println(rfidData);         // The rfidData string should now contain the tag's unique ID with a null termination
-  Serial.flush();                   // Wait for all bytes to be transmitted to the Serial Monitor
-   
-  delay(500);                       // this delay haults the uC just a little before moving on to the compare                  
+  Serial.flush();                   // Wait for all bytes to be transmitted to the Serial Monitor               
 
 /*********************************************************************************
  The following while loop will compare the current swiped RFID code to the ones
@@ -287,14 +306,11 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
  is found. When a match is found, the variable state is set to true and code breaks
  out of the loop.
 *********************************************************************************/
- uint8_t compareCounter = 0;          // set the whileCounter back to zero for next cycle
+ compareCounter = 0;          // set the whileCounter back to zero for next cycle
  if(swipeState == 1)          // if a swipe has occured, start comparing the results
  {
   do 
   {                
-      //lcd.setCursor(0, 0);           // Set the cursor location setCursor(column, row)
-      //lcd.print("Comparing Tags  "); // indicate on the LCD the current state 
-
       //The Char readInArray is initalized with some data becuase Arduino kept screwing up
       //without this being done. There would be extra data points appended to the string
       //even when it was ended with a null character. Initializing with some data will get the
@@ -332,7 +348,7 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     digitalWrite(RED_LED, LOW);          // Turn off the red LED, long enough to toggle the green ones three times
     digitalWrite(RELAY, HIGH);           // if a match is found, set pin 3 to HIGH
     lcd.setCursor(0, 0);                 // Set the cursor location setCursor(column, row)
-    lcd.print(F("Valid Card      "));       // indicate on the LCD that a match was found
+    lcd.print(F("Valid Card      "));    // indicate on the LCD that a match was found
     lcd.setCursor(0, 1);                 // Set the cursor location setCursor(column, row)
     lcd.print(F("Unlocking Now   "));
     Serial.println(F("Card is valid, unlocking")); // Tell the serial interface a match was found
@@ -352,10 +368,10 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   else                                   // When no match is found do this
   {
    lcd.setCursor(0, 0);                  // Set the cursor location setCursor(column, row)
-   lcd.print(F("Card Not Valid  "));          // indicate on the LCD that no match found
+   lcd.print(F("Card Not Valid  "));     // indicate on the LCD that no match found
    lcd.setCursor(0, 1);                  // Set the cursor location setCursor(column, row)
    lcd.print(F("Try Another Card"));
-   Serial.println(F("Card Not Valid"));     // Tell the serial interface no match found
+   Serial.println(F("Card Not Valid"));  // Tell the serial interface no match found
        
    for ( uint8_t i = 0; i < 3; i++)      // Toggle the Red LEDs a few times
    {
@@ -411,7 +427,31 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   rfidSerial.read(); 
   return; 
  }
-  
+
+   /*******************************************************************************************************
+ * Function Name: sdError()
+ * 
+ * Author: Bradford Henson
+ * 
+ * Description: 
+ *******************************************************************************************************/
+ void sdError()
+ {      
+      // if the file didn't open, print an error:
+      Serial.println(F("error opening logfile.txt"));
+      Serial.println(F("Check card and recycle power"));
+      lcd.setCursor(0, 1);             // Set the cursor location setCursor(column, row)
+      lcd.print(F("SD Write Error  "));   // Set the message to be displayed
+      delay(1000);
+      lcd.setCursor(0, 0);             // Set the cursor location setCursor(column, row)
+      lcd.print(F("Check Card and  "));   // Set the message to be displayed
+      lcd.setCursor(0, 1);             // Set the cursor location setCursor(column, row)
+      lcd.print(F("Recycle Power   "));   // Set the message to be displayed
+      delay(2000);
+    
+  return; 
+ }
+ 
  /*******************************************************************************************************
  * Function Name: timeStamp()
  * 
@@ -422,8 +462,9 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
  void timeStamp()
  {
     DateTime now = rtc.now();
-  
+    File logfile; // the logging file
     logfile = SD.open("logfile.txt", FILE_WRITE);
+    
     // if the file opened okay, write to it:
     if (logfile) 
     {
@@ -442,24 +483,16 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
       logfile.print("Card ID: ");
       logfile.print(rfidData);
       logfile.println();
+     
       // close the file:
       logfile.close();
       Serial.println(F("logfile entry was made"));
     } 
     else 
     {
-      
-      // if the file didn't open, print an error:
-      Serial.println(F("error opening logfile.txt"));
-      Serial.println(F("Check card and recycle power"));
-      lcd.setCursor(0, 1);             // Set the cursor location setCursor(column, row)
-      lcd.print(F("SD Write Error  "));   // Set the message to be displayed
-      delay(1000);
-      lcd.setCursor(0, 0);             // Set the cursor location setCursor(column, row)
-      lcd.print(F("Check Card and  "));   // Set the message to be displayed
-      lcd.setCursor(0, 1);             // Set the cursor location setCursor(column, row)
-      lcd.print(F("Recycle Power   "));   // Set the message to be displayed
-      delay(2000);
+      digitalWrite(RED_LED, HIGH);  // Turn on the Red LED while displaying the SD error
+      sdError();                    // Displays an SD error and recommendation to fix
+      digitalWrite(RED_LED, LOW);   // Turn off the Red LED after displaying the error
     }
     
   return; 
@@ -521,33 +554,50 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
  
  void selectUserInterface(uint8_t user)
  {                   
-   timeOutCounter = 0;                     // Zero out the time out counter before entering the loop
+   // Set the initial prompt to the user
+   lcd.setCursor(0, 0);                   // Set the initial position of on the LCD
+   lcd.print(F("User "));                 // Start on the first line with the word "User "
+   lcd.setCursor(5, 0);                   // Set cursor position just after the word user
+   lcd.print(user);                       // Display the current selected user that was passed to the function
+   if (user < 10)                         // If the user is less than 10 set cursor at position 6
+   {
+    lcd.setCursor(6, 0);
+   }
+   else if (user == 10)                   // If the user is 10, set the cursor at position 7 (moves it over one spot)
+   {
+    lcd.setCursor(7, 0);
+   }
+   lcd.print(F(" Press -  "));            // Finish the first line with "Press - "
+   lcd.setCursor(0, 1);                   // Set cursor to the start of the second line
+   lcd.print(F("ENTER or NEXT   "));      // Prompt user to press the next or enter button
+   delay(500);                            // Keeps from changing users to fast on a button press
+   
+   timeOutCounter = 0;                    // Zero out the time out counter before entering the loop
    while(1)
    {
-     
-     Serial.println(timeOutCounter);       // Tell the serial interface what the count is
-     if (digitalRead(NEXT_BUTTON) == 1) // if the Next button is pressed, do the following
-     {                                     // The pin is compared to 0 because it is being pulled up by the debouce hardware
-       selectedUser = user + 1;            // Set the selectedUser to the next available one, becuase we want the next user
-       nextUserFlag = 1;                   // keeps us in the select user portion of the programming mode
-       delay(200);                         // Just slows down uC for humans
-      break;                               // break out of this while loop
+     Serial.println(timeOutCounter);      // Tell the serial interface what the count is
+     if (digitalRead(NEXT_BUTTON) == 1)   // if the Next button is pressed, do the following
+     {                                    // The pin is compared to 0 because it is being pulled up by the debouce hardware
+       selectedUser = user + 1;           // Set the selectedUser to the next available one, becuase we want the next user
+       nextUserFlag = 1;                  // keeps us in the select user portion of the programming mode
+       delay(200);                        // Just slows down uC for humans
+      break;                              // break out of this while loop
       }
       
       if (digitalRead(ENTER_BUTTON) == 1) //if the Enter button is pressed, do the following
       {
-        nextUserFlag = 0;                    // We don't want to be in the select user portion anymore
-        enterButtonFlag = 1;                 // flags that a user was selected, used to exit the user selection while loop
-        selectedUser = user;                 // sets the variable -slectedUser- to the currently selected user                
-        delay(200);                          // Just slows down uC for humans   
-       break;                                // break out of this while loop
+        nextUserFlag = 0;                 // We don't want to be in the select user portion anymore
+        enterButtonFlag = 1;              // flags that a user was selected, used to exit the user selection while loop
+        selectedUser = user;              // sets the variable -slectedUser- to the currently selected user                
+        delay(200);                       // Just slows down uC for humans   
+       break;                             // break out of this while loop
         }
        
-       timeOutCounter++;                      // Increment the time out counter
-       if (timeOutCounter > TIMEOUT)          // When the counter reaches the defined (at the top) value, break out of loop
+       timeOutCounter++;                   // Increment the time out counter
+       if (timeOutCounter > TIMEOUT)       // When the counter reaches the defined (at the top) value, break out of loop
        {
-        selectedUser = 0;                     // If no user was selected (ie timeout happended), sets variable to 0
-        break;                                // If selectedUser is 0, the user won't be prompted to swipe RFID card
+        selectedUser = 0;                  // If no user was selected (ie timeout happended), sets variable to 0
+        break;                             // If selectedUser is 0, the user won't be prompted to swipe RFID card
        }
    }
    return;
@@ -564,6 +614,7 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
 void programmingMode(void)
 {
   programButtonState = 0;         //Sets the state back to 0 so that the button can trigger another event later
+  lcd.backlight();
   digitalWrite(enablePin, HIGH);  // deactivate the RFID reader
   timeOutCounter = 0;             // Set the time out counter to zero
   enterButtonFlag = 0;            // Set initial state of the enter button flag (used for exiting the while loop)
@@ -601,9 +652,9 @@ void programmingMode(void)
       }
 
   lcd.setCursor(0, 0);                        // Set the cursor location setCursor(column, row)
-  lcd.print(F("Master Card Is   "));             // indicate on the LCD that it is in programming mode
+  lcd.print(F("Master Card Is   "));          // indicate on the LCD that it is in programming mode
   lcd.setCursor(0, 1);                        // Set the cursor location setCursor(column, row)
-  lcd.print(F("Required        "));              // Set the LCD to press enter to continue
+  lcd.print(F("Required        "));           // Set the LCD to press enter to continue
 
   digitalWrite(enablePin, LOW);    // enable the RFID Reader
   digitalWrite(GREEN_LED, HIGH);   // Turn on the Green LED, the reader is ready for a card
@@ -638,9 +689,9 @@ void programmingMode(void)
   compareCounter = 0;
   do
   {                                             
-      lcd.setCursor(0, 0);           // Set the cursor location setCursor(column, row)
+      lcd.setCursor(0, 0);              // Set the cursor location setCursor(column, row)
       lcd.print(F("Comparing Tags  ")); // indicate on the LCD the current state 
-      lcd.setCursor(0, 1);           // Set the cursor location setCursor(column, row)
+      lcd.setCursor(0, 1);              // Set the cursor location setCursor(column, row)
       lcd.print(F("                ")); // indicate on the LCD the current state
       
       char newArray[] = "0123456789";   // char array used to store values from EEPROM
@@ -664,16 +715,16 @@ void programmingMode(void)
         swipeState = 0;
         invalidMasterCard = 1;
         
-        lcd.setCursor(0, 0);           // Set the cursor location setCursor(column, row)
+        lcd.setCursor(0, 0);              // Set the cursor location setCursor(column, row)
         lcd.print(F("Invalid Master  ")); // indicate on the LCD the current state 
-        lcd.setCursor(0, 1);           // Set the cursor location setCursor(column, row)
+        lcd.setCursor(0, 1);              // Set the cursor location setCursor(column, row)
         lcd.print(F("Card            ")); // indicate on the LCD the current state
         delay(1000); 
         
       }
       // increments the counter to prevent the while loop from not ending
       // the copareCounter is also used when reading the EEPROM data
-      compareCounter++;      // this will make sure that the compare loop only happens 2 times 
+      compareCounter++;          // this will make sure that the compare loop only happens 2 times 
     }while (compareCounter < 2); // The compare counter would have to be adjusted if more users are added
   }
  digitalWrite(RED_LED, HIGH);                   // Turn on the Red LED, reader is not ready
@@ -704,89 +755,34 @@ void programmingMode(void)
            switch (selectedUser)  // This will allow the users to be cycled through based on the the selectedUser variable
            {
                 case 1:                       
-                    
-                    //The function calls for the display could be moved to the selectUserInterface() function. 
-                    //However, the value being passed to the function is an integer and I was having trouble 
-                    //with using an integer directly in the LCD.print() function. I would imagine this value 
-                    //would need to be a string data type.                
-                    lcd.setCursor(0, 0);               // Set the inital LCD Screen state for the user
-                    lcd.print(F("User 1 Press -  "));     // Sets the message on the LCD
-                    lcd.setCursor(0, 1);               // Set the cursor location to the bottom left position
-                    lcd.print(F("ENTER or NEXT   "));     // Prompt for either the Enter button or the Next button
-                    delay(500);                        // Slow the uC down to prevent it jumping directly to the next state 
-                    selectUserInterface(selectedUser); // Do something based on which button is pressed
+                    selectUserInterface(selectedUser); // Pass selected user 1 to the function
                   break;
                 case 2:
-                    lcd.setCursor(0, 0);    
-                    lcd.print(F("User 2 Press -  "));
-                    lcd.setCursor(0, 1);    
-                    lcd.print(F("ENTER or NEXT   "));
-                    delay(500);
-                    selectUserInterface(selectedUser);
+                    selectUserInterface(selectedUser); // Pass selected user 2 to the function
                   break;
                 case 3:
-                    lcd.setCursor(0, 0);    
-                    lcd.print(F("User 3 Press -  "));
-                    lcd.setCursor(0, 1);    
-                    lcd.print(F("ENTER or NEXT   "));
-                    delay(500);
-                    selectUserInterface(selectedUser);
+                    selectUserInterface(selectedUser); // Pass selected user 3 to the function
                   break;
                 case 4:
-                    lcd.setCursor(0, 0);    
-                    lcd.print(F("User 4 Press -  "));
-                    lcd.setCursor(0, 1);    
-                    lcd.print(F("ENTER or NEXT   "));
-                    delay(500);
-                    selectUserInterface(selectedUser);
+                    selectUserInterface(selectedUser); // Pass selected user 4 to the function
                   break;
                 case 5:
-                    lcd.setCursor(0, 0);    
-                    lcd.print(F("User 5 Press -  "));
-                    lcd.setCursor(0, 1);    
-                    lcd.print(F("ENTER or NEXT   "));
-                    delay(500);
-                    selectUserInterface(selectedUser);
+                    selectUserInterface(selectedUser); // Pass selected user 5 to the function
                   break;
                 case 6:
-                    lcd.setCursor(0, 0);    
-                    lcd.print(F("User 6 Press -  "));
-                    lcd.setCursor(0, 1);    
-                    lcd.print(F("ENTER or NEXT   "));
-                    delay(500);
-                    selectUserInterface(selectedUser);
+                    selectUserInterface(selectedUser); // Pass selected user 6 to the function
                   break;
                 case 7:
-                    lcd.setCursor(0, 0);    
-                    lcd.print(F("User 7 Press -  "));
-                    lcd.setCursor(0, 1);    
-                    lcd.print(F("ENTER or NEXT   "));
-                    delay(500);
-                    selectUserInterface(selectedUser);
+                    selectUserInterface(selectedUser); // Pass selected user 7 to the function
                   break;
                 case 8:
-                    lcd.setCursor(0, 0);    
-                    lcd.print(F("User 8 Press -  "));
-                    lcd.setCursor(0, 1);    
-                    lcd.print(F("ENTER or NEXT   "));
-                    delay(500);
-                    selectUserInterface(selectedUser);
+                    selectUserInterface(selectedUser); // Pass selected user 8 to the function
                   break;
                 case 9:
-                    lcd.setCursor(0, 0);    
-                    lcd.print(F("User 9 Press -  "));
-                    lcd.setCursor(0, 1);    
-                    lcd.print(F("ENTER or NEXT   "));
-                    delay(500);
-                    selectUserInterface(selectedUser);
+                    selectUserInterface(selectedUser); // Pass selected user 9 to the function
                   break;
                 case 10:
-                    lcd.setCursor(0, 0);    
-                    lcd.print(F("User 10 Press -  "));
-                    lcd.setCursor(0, 1);    
-                    lcd.print(F("ENTER or NEXT   "));
-                    delay(500);
-                    selectUserInterface(selectedUser);
+                    selectUserInterface(selectedUser); // Pass selected user 10 to the function
                     if (selectedUser == 11)
                     {
                       selectedUser = 1; //By setting the selectedUser back to 1, the application will cycle back thru
