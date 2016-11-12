@@ -96,7 +96,7 @@ Additional considerations:
  #define enablePin  2       // Connects to the RFID's ENABLE pin
  #define rxPin      4       // Serial input (connects to the RFID's SOUT pin)
  #define txPin      9       // Serial output (unused)
- #define BUFSIZE    11      // Size of receive buffer (in bytes) (10-byte unique ID + null character)
+ #define BUFSIZE    11      // Size of receive buffer (in bytes)
  #define RFID_START  0x0A   // RFID Reader Start byte
  #define RFID_STOP   0x0D   // RFID Reader Stop byte
  #define GREEN_LED A0       // Green LED on Analog pin 0
@@ -106,8 +106,8 @@ Additional considerations:
  #define BYPASS_BUTTON 9    // Bypass on Digital pin 9
  #define RELAY 5            // Relay output on Digital pin 5
  #define chipSelect 10      // chip select should be identified, even when not in use
- #define approachingMax 200000000
- #define maxFilesize 300000000
+ #define approachingMax 200000000  // Set the value to display an SD clear recommendation
+ #define maxFilesize 300000000     // Set the value to disable data logging
 
 /********************************************************************************
   
@@ -156,8 +156,8 @@ in the event the other master card is lost.
  uint8_t programButtonState = 0;    // Used to determine when the programming button was pushed
  uint8_t compareCounter = 0;        // Used to control the loop when comparing
  int timeOutCounter = 0;            // Used through out the programming mode section
- uint8_t nextButtonState;       // Used to determine if the Next Button is being pressed
- uint8_t enterButtonState;      // Used to determine if the Enter Button is being pressed
+ uint8_t nextButtonState;           // Used to determine if the Next Button is being pressed
+ uint8_t enterButtonState;          // Used to determine if the Enter Button is being pressed
  boolean nextUserFlag = 0;          // Create a user flag for programming mode function
  boolean enterButtonFlag = 0;       // Create a button flag for programming mode function
  boolean bypassButtonState = 0;     // Used to determine if the Bypass Button is being pressed
@@ -295,8 +295,8 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   lcd.setCursor(0, 1);                // Set the cursor location setCursor(column, row)
   lcd.print(F("                "));   // Clears out the second row of the LCD
 
-//Initialize the reader and start waiting for a swipe, once a read has occured
-//the value is stored as rfidData[], then close out the reader 
+  //Initialize the reader and start waiting for a swipe, once a read has occured
+  //the value is stored as rfidData[], then close out the reader 
 
   rfidData[0] = 0;                  // Clear the buffer 
   swipeState = 0;                   // Set the state as no card has been swiped yet
@@ -310,6 +310,10 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
 
   digitalWrite(GREEN_LED, HIGH); // When the card reader is ready to read a card, turn on the Green LED
   digitalWrite(RED_LED, LOW);    // When the card reader is ready to read a card, turn off the Red LED
+
+/**********************************
+ * Begin the ready to read loop
+ **********************************/
   
   timeOutCounter = 0;
   while(1)   // Wait for a response from the RFID Reader
@@ -336,6 +340,11 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
         lcd.noBacklight();        // Turns off the LCD backlight (there is a transistor on the LCD backpack for this)
       }
    }
+
+/**********************************
+ * End of ready to read loop
+ **********************************/
+   
   lcd.backlight();                // Turn on the LCD backlight when exiting the Ready to Read state
   digitalWrite(RED_LED, HIGH);      // The reader is not ready, turn on the Red LED
   digitalWrite(GREEN_LED, LOW);     // The reader is not ready, turn off the Green LED
@@ -382,12 +391,13 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
       compareCounter++;      // this will make sure that the compare loop only happens 10 times  
    }while (compareCounter < 10); 
  }
-/*********************************************************************************  
-  The following section is where we use the information obtained when comparing RFIDs
-  to the values saved in EEPROM. 
-*********************************************************************************/    
+
+/**********************************
+ * Match was found
+ **********************************/
+   
  if (swipeState == 1) // If a swipe has occured, do something with the results of - match -
- {
+ {  
   if (match == true)                     // When a match is found do this
   {
     digitalWrite(RED_LED, LOW);          // Turn off the red LED, long enough to toggle the green ones three times
@@ -429,7 +439,9 @@ rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
     }    
     delay(2000);
     }
-    
+/**********************************
+ * No match was found
+ **********************************/
   }
   else                                   // When no match is found do this
   {
