@@ -61,7 +61,7 @@ Arduino pin 8 used to connect to a button for ENTER
 Arduino pin 6 used to connect to a button for NEXT
 Arduino Analog pin 0 used to connect to a Green LED
 Arduino Analog pin 1 used to connect to a Red LED
-Arduino Analog pin 9 used for BYPASS
+Arduino Digital pin 9 used for BYPASS
 Arduino SDA and SCL (I2C) will go to the LCD Backpack
 Arduino SDA and SCL (I2C) will also connect to the RTC via the shield
 Arduino 10, 11, 12, 13 (SPI) connect tot he SD card reader via the shield
