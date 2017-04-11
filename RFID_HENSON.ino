@@ -82,8 +82,6 @@ Additional considerations:
   https://bitbucket.org/fmalpartida/new-liquidcrystal/downloads/NewliquidCrystal_1.3.4.zip
   A good turtorial for using this type of backpack is at:
   http://arduino-info.wikispaces.com/LCD-Blue-I2C
-  
-This is a test from Visual Studio Code
 
 **********************************************************************************/
 
