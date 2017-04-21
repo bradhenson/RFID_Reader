@@ -83,6 +83,8 @@ Additional considerations:
   A good turtorial for using this type of backpack is at:
   http://arduino-info.wikispaces.com/LCD-Blue-I2C
 
+  This is just a test of VS Code integration to github
+
 **********************************************************************************/
 
  #include <EEPROM.h>
